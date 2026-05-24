@@ -59,6 +59,16 @@
             margin: 0 auto 25px;
             font-size: 3em;
             box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
+            transition: transform 0.3s;
+        }
+
+        .login-icon.loading {
+            animation: spin 0.6s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
 
         .login-card h1 {
@@ -95,6 +105,11 @@
             box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
         }
 
+        .input-group input:disabled {
+            background-color: #f5f5f5;
+            cursor: not-allowed;
+        }
+
         .login-btn {
             width: 100%;
             padding: 16px;
@@ -109,13 +124,18 @@
             margin-top: 10px;
         }
 
-        .login-btn:hover {
+        .login-btn:hover:not(:disabled) {
             transform: translateY(-2px);
             box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
         }
 
-        .login-btn:active {
+        .login-btn:active:not(:disabled) {
             transform: translateY(0);
+        }
+
+        .login-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
         }
 
         .error-msg {
@@ -126,12 +146,47 @@
             margin-top: 15px;
             display: none;
             animation: shake 0.5s;
+            border: 1px solid #ef5350;
+        }
+
+        .warning-msg {
+            background: #fff3e0;
+            color: #e65100;
+            padding: 12px;
+            border-radius: 10px;
+            margin-top: 10px;
+            display: none;
+            border: 1px solid #ffb74d;
+            font-size: 0.9em;
+        }
+
+        .success-login {
+            background: #e8f5e9;
+            color: #2e7d32;
+            padding: 12px;
+            border-radius: 10px;
+            margin-top: 15px;
+            display: none;
+            animation: slideDown 0.5s;
+            border: 1px solid #66bb6a;
+            font-weight: bold;
         }
 
         @keyframes shake {
             0%, 100% { transform: translateX(0); }
             25% { transform: translateX(-10px); }
             75% { transform: translateX(10px); }
+        }
+
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .attempts-counter {
+            font-size: 0.85em;
+            color: #999;
+            margin-top: 10px;
         }
 
         /* Main App */
@@ -352,11 +407,6 @@
             animation: slideDown 0.3s;
         }
 
-        @keyframes slideDown {
-            from { opacity: 0; transform: translateY(-10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
         .stats {
             display: flex;
             gap: 15px;
@@ -447,7 +497,7 @@
     <!-- Login Page -->
     <div id="loginPage" class="login-container">
         <div class="login-card">
-            <div class="login-icon">📚</div>
+            <div class="login-icon" id="loginIcon">📚</div>
             <h1>منصة الدراسة</h1>
             <p>أدخل كلمة المرور للوصول إلى محتواك</p>
             
@@ -455,11 +505,21 @@
                 <input type="password" id="passwordInput" placeholder="••••••••" autocomplete="off">
             </div>
             
-            <button class="login-btn" onclick="checkPassword()">🔓 تسجيل الدخول</button>
+            <button class="login-btn" id="loginBtn" onclick="checkPassword()">🔓 تسجيل الدخول</button>
+            
+            <div id="successMsg" class="success-login">
+                ✅ تم التحقق بنجاح! جاري التحميل...
+            </div>
             
             <div id="errorMsg" class="error-msg">
                 ❌ كلمة المرور غير صحيحة
             </div>
+
+            <div id="warningMsg" class="warning-msg">
+                ⚠️ عدد محاولات خاطئة متعددة. انتظر قليلاً قبل المحاولة مجددًا
+            </div>
+            
+            <div id="attemptsCounter" class="attempts-counter"></div>
         </div>
     </div>
 
@@ -559,6 +619,12 @@
     </div>
 
     <script>
+        // ===== CONFIG =====
+        const MAX_LOGIN_ATTEMPTS = 5;
+        const LOCKOUT_TIME = 30000; // 30 ثانية
+        let loginAttempts = 0;
+        let isLocked = false;
+
         // ===== PASSWORDS =====
         const PASSWORDS = {
             'admin2024': { name: 'المدير', role: 'admin' },
@@ -575,31 +641,133 @@
 
         let currentUser = null;
 
-        // ===== LOGIN =====
+        // ===== LOGIN FUNCTIONS =====
         function checkPassword() {
+            if (isLocked) {
+                showWarning('❌ حسابك مغلق مؤقتًا. انتظر قليلاً قبل المحاولة مجددًا');
+                return;
+            }
+
             const input = document.getElementById('passwordInput').value.trim();
             
+            if (!input) {
+                showError('❌ الرجاء إدخال كلمة المرور');
+                return;
+            }
+            
             if (PASSWORDS[input]) {
-                currentUser = PASSWORDS[input];
-                currentUser.password = input;
-                
-                document.getElementById('loginPage').style.display = 'none';
-                document.getElementById('mainApp').style.display = 'block';
-                
-                document.getElementById('userBadge').textContent = `👤 ${currentUser.name}`;
-                
-                localStorage.setItem('studyUser', JSON.stringify(currentUser));
-                initApp();
+                successLogin(input);
             } else {
-                const errorEl = document.getElementById('errorMsg');
-                errorEl.style.display = 'block';
-                document.getElementById('passwordInput').value = '';
-                
-                setTimeout(() => {
-                    errorEl.style.display = 'none';
-                }, 3000);
+                failedLogin();
             }
         }
+
+        function successLogin(password) {
+            currentUser = PASSWORDS[password];
+            currentUser.password = password;
+            
+            // إظهار رسالة نجاح
+            document.getElementById('successMsg').style.display = 'block';
+            document.getElementById('loginBtn').disabled = true;
+            document.getElementById('passwordInput').disabled = true;
+            
+            // إخفاء الأخطاء
+            document.getElementById('errorMsg').style.display = 'none';
+            document.getElementById('warningMsg').style.display = 'none';
+            
+            // حفظ بيانات المستخدم
+            localStorage.setItem('studyUser', JSON.stringify(currentUser));
+            
+            // الانتقال للتطبيق الرئيسي بعد تأخير صغير
+            setTimeout(() => {
+                document.getElementById('loginPage').style.display = 'none';
+                document.getElementById('mainApp').style.display = 'block';
+                document.getElementById('userBadge').textContent = `👤 ${currentUser.name}`;
+                initApp();
+                loginAttempts = 0; // إعادة تعيين العداد
+            }, 800);
+        }
+
+        function failedLogin() {
+            loginAttempts++;
+            updateAttemptsDisplay();
+            
+            if (loginAttempts >= MAX_LOGIN_ATTEMPTS) {
+                lockAccount();
+                return;
+            }
+            
+            showError(`❌ كلمة المرور غير صحيحة`);
+            document.getElementById('passwordInput').value = '';
+            document.getElementById('passwordInput').focus();
+            
+            // شهز أيقونة الخطأ
+            const icon = document.getElementById('loginIcon');
+            icon.style.animation = 'shake 0.5s';
+            setTimeout(() => icon.style.animation = '', 500);
+        }
+
+        function lockAccount() {
+            isLocked = true;
+            document.getElementById('warningMsg').style.display = 'block';
+            document.getElementById('errorMsg').style.display = 'none';
+            document.getElementById('loginBtn').disabled = true;
+            document.getElementById('passwordInput').disabled = true;
+            
+            let remainingTime = LOCKOUT_TIME / 1000;
+            const counter = document.getElementById('attemptsCounter');
+            
+            const countdown = setInterval(() => {
+                remainingTime--;
+                counter.textContent = `⏳ محاولة مجددًا خلال: ${remainingTime}ث`;
+                
+                if (remainingTime <= 0) {
+                    clearInterval(countdown);
+                    unlockAccount();
+                }
+            }, 1000);
+        }
+
+        function unlockAccount() {
+            isLocked = false;
+            loginAttempts = 0;
+            document.getElementById('loginBtn').disabled = false;
+            document.getElementById('passwordInput').disabled = false;
+            document.getElementById('warningMsg').style.display = 'none';
+            document.getElementById('attemptsCounter').textContent = '';
+            document.getElementById('passwordInput').value = '';
+            document.getElementById('passwordInput').focus();
+        }
+
+        function showError(message) {
+            const errorEl = document.getElementById('errorMsg');
+            errorEl.textContent = message;
+            errorEl.style.display = 'block';
+            setTimeout(() => errorEl.style.display = 'none', 4000);
+        }
+
+        function showWarning(message) {
+            const warningEl = document.getElementById('warningMsg');
+            warningEl.textContent = message;
+            warningEl.style.display = 'block';
+        }
+
+        function updateAttemptsDisplay() {
+            const remaining = MAX_LOGIN_ATTEMPTS - loginAttempts;
+            const counter = document.getElementById('attemptsCounter');
+            if (remaining > 0) {
+                counter.textContent = `محاولات متبقية: ${remaining}`;
+            }
+        }
+
+        // دعم مفتاح Enter
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('passwordInput').addEventListener('keypress', function(event) {
+                if (event.key === 'Enter') {
+                    checkPassword();
+                }
+            });
+        });
 
         function logout() {
             if (confirm('هل تريد تسجيل الخروج؟')) {
@@ -608,14 +776,19 @@
             }
         }
 
-        // Auto login
+        // تسجيل الدخول التلقائي
         const savedUser = localStorage.getItem('studyUser');
         if (savedUser) {
-            currentUser = JSON.parse(savedUser);
-            document.getElementById('loginPage').style.display = 'none';
-            document.getElementById('mainApp').style.display = 'block';
-            document.getElementById('userBadge').textContent = `👤 ${currentUser.name}`;
-            initApp();
+            try {
+                currentUser = JSON.parse(savedUser);
+                document.getElementById('loginPage').style.display = 'none';
+                document.getElementById('mainApp').style.display = 'block';
+                document.getElementById('userBadge').textContent = `👤 ${currentUser.name}`;
+                initApp();
+            } catch (e) {
+                console.error('خطأ في تحميل بيانات المستخدم:', e);
+                localStorage.removeItem('studyUser');
+            }
         }
 
         // ===== DATA =====
