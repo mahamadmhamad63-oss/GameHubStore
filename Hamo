@@ -410,6 +410,26 @@
             cursor: pointer;
             backdrop-filter: blur(10px);
             z-index: 100;
+            transition: all 0.3s;
+        }
+
+        .logout-btn:hover {
+            background: rgba(255,255,255,0.3);
+        }
+
+        .delete-btn {
+            background: linear-gradient(135deg, #ff416c 0%, #ff4b2b 100%);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+
+        .delete-btn:hover {
+            transform: scale(1.05);
         }
 
         @media (max-width: 600px) {
@@ -509,7 +529,7 @@
                         1. ارفع الفيديو على Google Drive<br>
                         2. اعمل كليك يمين على الفيديو → Share<br>
                         3. غير الإعدادات لـ "Anyone with the link"<br>
-                        4. انسخ الرابط والصقه هنا (المتصفح هيعمل الباقي)
+                        4. انسخ الرابط والصقه هنا
                     </div>
                     <input type="text" id="videoTitle" placeholder="📌 عنوان الفيديو">
                     <input type="text" id="videoUrl" placeholder="🔗 رابط Google Drive">
@@ -539,7 +559,7 @@
     </div>
 
     <script>
-        // ===== PASSWORDS (Hidden) =====
+        // ===== PASSWORDS =====
         const PASSWORDS = {
             'admin2024': { name: 'المدير', role: 'admin' },
             'teacher1': { name: 'المعلم 1', role: 'teacher' },
@@ -595,6 +615,7 @@
             document.getElementById('loginPage').style.display = 'none';
             document.getElementById('mainApp').style.display = 'block';
             document.getElementById('userBadge').textContent = `👤 ${currentUser.name}`;
+            initApp();
         }
 
         // ===== DATA =====
@@ -635,4 +656,176 @@
         function saveData() {
             localStorage.setItem('studyVideos', JSON.stringify(videos));
             localStorage.setItem('studyLinks', JSON.stringify(links));
-        
+        }
+
+        // ===== VIDEO MANAGEMENT =====
+        function addVideo() {
+            const title = document.getElementById('videoTitle').value.trim();
+            const url = document.getElementById('videoUrl').value.trim();
+            
+            if (!title || !url) {
+                alert('❌ الرجاء ملء جميع الحقول');
+                return;
+            }
+            
+            const convertedUrl = convertDriveLink(url);
+            videos.push({ id: Date.now(), title, url: convertedUrl, type: 'drive', date: new Date().toLocaleDateString('ar-EG') });
+            
+            saveData();
+            document.getElementById('videoTitle').value = '';
+            document.getElementById('videoUrl').value = '';
+            
+            const successEl = document.getElementById('videoSuccess');
+            successEl.style.display = 'block';
+            setTimeout(() => successEl.style.display = 'none', 3000);
+            
+            renderVideos();
+            updateStats();
+        }
+
+        function addYouTube() {
+            const title = document.getElementById('ytTitle').value.trim();
+            const url = document.getElementById('ytUrl').value.trim();
+            
+            if (!title || !url) {
+                alert('❌ الرجاء ملء جميع الحقول');
+                return;
+            }
+            
+            const videoId = getYouTubeId(url);
+            if (!videoId) {
+                alert('❌ رابط YouTube غير صحيح');
+                return;
+            }
+            
+            videos.push({ id: Date.now(), title, url: videoId, type: 'youtube', date: new Date().toLocaleDateString('ar-EG') });
+            
+            saveData();
+            document.getElementById('ytTitle').value = '';
+            document.getElementById('ytUrl').value = '';
+            
+            const successEl = document.getElementById('ytSuccess');
+            successEl.style.display = 'block';
+            setTimeout(() => successEl.style.display = 'none', 3000);
+            
+            renderVideos();
+            updateStats();
+        }
+
+        function deleteVideo(id) {
+            if (confirm('هل تريد حذف هذا الفيديو؟')) {
+                videos = videos.filter(v => v.id !== id);
+                saveData();
+                renderVideos();
+                updateStats();
+            }
+        }
+
+        function renderVideos() {
+            const videosList = document.getElementById('videosList');
+            
+            if (videos.length === 0) {
+                videosList.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">🎬</div>
+                        لا توجد فيديوهات بعد<br>
+                        <span style="font-size: 0.9em;">أضف فيديو جديد من تبويب "إضافة جديد"</span>
+                    </div>
+                `;
+                return;
+            }
+            
+            videosList.innerHTML = videos.map(video => {
+                if (video.type === 'youtube') {
+                    return `
+                        <div class="video-item">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                <h3>${video.title}</h3>
+                                <button class="delete-btn" onclick="deleteVideo(${video.id})">🗑️ حذف</button>
+                            </div>
+                            <iframe src="https://www.youtube.com/embed/${video.url}" allowfullscreen></iframe>
+                            <div class="link-meta">📅 ${video.date}</div>
+                        </div>
+                    `;
+                } else {
+                    return `
+                        <div class="video-item">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                <h3>${video.title}</h3>
+                                <button class="delete-btn" onclick="deleteVideo(${video.id})">🗑️ حذف</button>
+                            </div>
+                            <iframe src="${video.url}" allowfullscreen></iframe>
+                            <div class="link-meta">📅 ${video.date}</div>
+                        </div>
+                    `;
+                }
+            }).join('');
+        }
+
+        // ===== LINK MANAGEMENT =====
+        function addLink() {
+            const title = document.getElementById('linkTitle').value.trim();
+            const url = document.getElementById('linkUrl').value.trim();
+            
+            if (!title || !url) {
+                alert('❌ الرجاء ملء جميع الحقول');
+                return;
+            }
+            
+            links.push({ id: Date.now(), title, url, date: new Date().toLocaleDateString('ar-EG') });
+            
+            saveData();
+            document.getElementById('linkTitle').value = '';
+            document.getElementById('linkUrl').value = '';
+            
+            const successEl = document.getElementById('linkSuccess');
+            successEl.style.display = 'block';
+            setTimeout(() => successEl.style.display = 'none', 3000);
+            
+            renderLinks();
+            updateStats();
+        }
+
+        function deleteLink(id) {
+            if (confirm('هل تريد حذف هذا الرابط؟')) {
+                links = links.filter(l => l.id !== id);
+                saveData();
+                renderLinks();
+                updateStats();
+            }
+        }
+
+        function renderLinks() {
+            const linksList = document.getElementById('linksList');
+            
+            if (links.length === 0) {
+                linksList.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">🔗</div>
+                        لا توجد روابط بعد<br>
+                        <span style="font-size: 0.9em;">أضف رابط جديد من تبويب "إضافة جديد"</span>
+                    </div>
+                `;
+                return;
+            }
+            
+            linksList.innerHTML = links.map(link => `
+                <div class="link-item">
+                    <div class="link-info">
+                        <a href="${link.url}" target="_blank">${link.title}</a>
+                        <div class="link-meta">📅 ${link.date}</div>
+                    </div>
+                    <button class="delete-btn" onclick="deleteLink(${link.id})">🗑️ حذف</button>
+                </div>
+            `).join('');
+        }
+
+        // ===== STATS =====
+        function updateStats() {
+            document.getElementById('videoCount').textContent = videos.length;
+            document.getElementById('linkCount').textContent = links.length;
+        }
+    </script>
+
+</body>
+</html>
